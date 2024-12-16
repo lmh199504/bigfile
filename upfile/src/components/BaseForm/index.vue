@@ -1,24 +1,35 @@
 <template>
   <div class="form-wrapper">
-    <el-form ref="formRef" :model="formModel">
+    <el-form
+      ref="formRef"
+      :model="formModel"
+      :label-position="getProps.labelPosition"
+      :label-width="getProps.labelWidth"
+    >
       <el-row :gutter="10">
         <FormItem
-          v-for="schema in getSchema"
+          v-for="(schema, index) in getSchema"
           :schema="schema"
           :key="schema.field"
           :form-model="formModel"
+          :formProps="getProps"
+          :index="index"
+          :mas-show-index="masShowIndex"
+          :is-open="isOpen"
         >
           <template v-for="item in Object.keys($slots)" #[item]="data">
             <slot :name="item" v-bind="data || {}"></slot>
           </template>
         </FormItem>
-        <el-col :span="6">
-          <el-button @click="handleReset">重置</el-button>
-          <el-button>查询</el-button>
-          <el-button type="primary" link @click="toggleOpen">{{
-            isOpen ? '收起' : '展开'
-          }}</el-button>
-        </el-col>
+        <FormAction
+          :is-open="isOpen"
+          :action-col="getProps.actionCol || {}"
+          :schema="getSchema"
+          :base-col="getProps.baseCol || {}"
+          @toggle="toggleOpen"
+          :form-model="formModel"
+          :showOpenBtn="openBtn"
+        />
       </el-row>
     </el-form>
   </div>
@@ -29,6 +40,7 @@ import {
   defineComponent,
   getCurrentInstance,
   onMounted,
+  onUnmounted,
   reactive,
   ref,
   unref,
@@ -39,6 +51,7 @@ import type { FormProps, FormSchema } from './types/form'
 import type { FormActionType } from './types/formActionType'
 import FormItem from './components/form-item.vue'
 import { useFormEvent } from './hooks/useFormEvent'
+import FormAction from './components/form-action.vue'
 
 function is(val: unknown, type: string) {
   return toString.call(val) === `[object ${type}]`
@@ -59,18 +72,17 @@ export default defineComponent({
   props: basicProps,
   emits: ['register', 'submit'],
   components: {
-    FormItem
+    FormItem,
+    FormAction
   },
   setup(props, { emit }) {
     let $instance: ComponentInternalInstance | null = null
     const propsRef = ref<FormProps>({})
     const formRef = ref()
-
     const formModel = reactive<Record<string, any>>({})
-
+    const openBtn = ref(false)
     // 默认收起
-    const isOpen = ref(false)
-
+    const isOpen = ref(props.open)
     const getProps = computed((): FormProps => {
       return { ...props, ...propsRef.value }
     })
@@ -81,6 +93,13 @@ export default defineComponent({
 
     async function setProps(formProps: Partial<FormProps>): Promise<void> {
       propsRef.value = deepMerge(unref(propsRef) || {}, formProps)
+      if (formProps.open !== undefined) {
+        isOpen.value = !!formProps.open
+      }
+      if (formModel.showOpenBtn !== undefined) {
+        openBtn.value = !!formProps.showOpenBtn
+      }
+
       $instance = getCurrentInstance() || $instance
     }
 
@@ -101,6 +120,9 @@ export default defineComponent({
       emit('register', formActionType)
     })
 
+    onUnmounted(() => {
+      $instance = null
+    })
     const initDefault = () => {
       getSchema.value.forEach((item) => {
         if (item.defaultValue) {
@@ -121,6 +143,24 @@ export default defineComponent({
       emit('submit', unref(formModel))
     }
 
+    const masShowIndex = computed(() => {
+      let BASE_COL_SPAN = 24
+      const { baseCol } = getProps.value
+      if (baseCol) {
+        BASE_COL_SPAN = baseCol.span || 24
+      }
+      let colSum = 0
+      let index = unref(getSchema).length
+      for (let i = 0; i < unref(getSchema).length; i++) {
+        const item = unref(getSchema)[i]
+        colSum += item.colProps?.span || BASE_COL_SPAN
+        if (colSum >= 24) {
+          index = i - 1
+        }
+      }
+      return index
+    })
+
     return {
       getSchema,
       formRef,
@@ -128,7 +168,10 @@ export default defineComponent({
       toggleOpen,
       formModel,
       handleReset,
-      handleSubmit
+      handleSubmit,
+      getProps,
+      masShowIndex,
+      openBtn
     }
   }
 })

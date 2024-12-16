@@ -1,5 +1,9 @@
 <template>
-  <BaseForm @register="register" />
+  <BaseForm @register="register">
+    <template #our="{ formModel, field }">
+      <el-input v-model="formModel[field]"/>
+    </template>
+  </BaseForm>
   <el-button @click="getValues">获取值</el-button>
 </template>
 <script setup lang="ts">
@@ -7,14 +11,32 @@ import BaseForm from '@/components/BaseForm/index.vue'
 import { useForm } from '@/components/BaseForm/hooks/useForm'
 
 const [register, form] = useForm({
+  baseCol: {
+    span: 6
+  },
+  actionCol: {
+    span: 24,
+    style: {
+      textAlign: 'center'
+    }
+  },
+  labelWidth: '80px',
   schemas: [
+    {
+      field: 'our',
+      component: 'ElDatePicker',
+      label: '时间',
+      componentProps: {
+        style: { width: '100%' },
+        placeholder: '请选择'
+      },
+      // ifShow: false,
+      slot: 'our'
+    },
     {
       field: 'name',
       label: '姓名',
       component: 'ElInput',
-      colProps: {
-        span: 6
-      },
       componentProps: {
         placeholder: '请输入'
       }
@@ -37,8 +59,14 @@ const [register, form] = useForm({
       colProps: {
         span: 6
       },
-      componentProps: {
-        placeholder: '请输入'
+      componentProps: ({ formModel }) => {
+        return {
+          placeholder: '请输入',
+          onInput: (val: string) => {
+            formModel.age = val;
+          },
+          clearable: true,
+        }
       }
     },
     {
@@ -67,13 +95,26 @@ const [register, form] = useForm({
           message: '类型不能为空'
         }
       ]
+    },
+    {
+      field: 'time',
+      component: 'ElDatePicker',
+      label: '时间',
+      componentProps: {
+        style: { width: '100%' },
+        placeholder: '请选择'
+      },
+      ifShow({ formModel }) {
+        return formModel.sex
+      }
     }
-  ]
+  ],
+  showOpenBtn: false,
+  open: true,
 })
-console.log(form)
 const getValues = () => {
   const value = form.getFieldsValue()
   console.log(value)
-  form.validate();
+  form.validate()
 }
 </script>
