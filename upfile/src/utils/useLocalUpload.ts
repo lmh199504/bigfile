@@ -1,18 +1,27 @@
 let db: IDBDatabase | null
 const databaseName = 'file'
 const version = 3
-const storeName = 'fileList'
-
+const storeName = 'blobList'
 export interface IData {
+  // indexedDB数据库key
   myKey: string
-  // file: File
+  // 原文件MD5
   md5: string
+  // 分割的blob文件
   blob: Blob
+  // 序号
   index: number
+  // 上传状态
   status: 'success' | 'error' | 'init'
+  // 文件名
   name: string
+  // 文件大小
   size: number
+  // 文件类型
   type: string
+  // 一共有多少个
+  allSize: number
+  saveType: SVAE_TYPE
 }
 
 export interface FormatData {
@@ -20,7 +29,14 @@ export interface FormatData {
   list: IData[]
 }
 
-const useFileIndexDB = () => {
+type SVAE_TYPE = 'blob' | 'file'
+export interface LocalFile {
+  myKey: string
+  file: File
+  saveType: SVAE_TYPE
+}
+
+const useLocalUpload = () => {
   const connect = (): Promise<IDBDatabase> => {
     if (db) return Promise.resolve(db)
     return new Promise((resolve, reject) => {
@@ -37,6 +53,7 @@ const useFileIndexDB = () => {
         reject(error)
       }
       req.onupgradeneeded = function (event: any) {
+        console.log(event)
         db = event.target.result
         if (db && !db.objectStoreNames.contains(storeName)) {
           // keyPath是主键键值，也可以不传然后设定autoIncrement：true自动创建键值
@@ -45,9 +62,8 @@ const useFileIndexDB = () => {
       }
     })
   }
-  const addData = async (data: IData): Promise<void> => {
+  const addData = async (data: IData | LocalFile): Promise<void> => {
     await connect()
-    console.log(data)
 
     const transaction = db!.transaction([storeName], 'readwrite') // 事务对象 指定表格名称和操作模式（"只读"或"读写"）
     const objectStore = transaction.objectStore(storeName) // 仓库对象
@@ -59,13 +75,12 @@ const useFileIndexDB = () => {
       }
 
       request.onerror = function () {
-        console.log('-----')
         reject()
       }
     })
   }
 
-  const updateDB = async (data: IData): Promise<void> => {
+  const updateDB = async (data: IData | LocalFile): Promise<void> => {
     await connect()
     const transaction = db!.transaction([storeName], 'readwrite') // 事务对象 指定表格名称和操作模式（"只读"或"读写"）
     const objectStore = transaction.objectStore(storeName) // 仓库对象
@@ -84,26 +99,31 @@ const useFileIndexDB = () => {
     })
   }
 
-  const getAllData = async (): Promise<FormatData[]> => {
+  const getAllData = async (type: SVAE_TYPE = 'blob'): Promise<FormatData[] | LocalFile[]> => {
     await connect()
     const transaction = db!.transaction([storeName], 'readonly')
     const objectStore = transaction.objectStore(storeName)
     // 打开游标
     const cursorRequest = objectStore.openCursor()
-    const data: IData[] = []
+    const data: IData[] | LocalFile[] = []
 
     return new Promise((resolve, reject) => {
       cursorRequest.onsuccess = function (event: any) {
         const cursor = event.target.result
         if (cursor) {
           // 将每一个数据对象推入数组中
-          data.push(cursor.value)
+          if (cursor.value.saveType == type) {
+            data.push(cursor.value)
+          }
           cursor.continue()
         } else {
-          // 所有数据已经处理完毕，将数据数组返回
-          const res = formatByKey(data)
-          console.log(res)
-          resolve(res)
+          if (type == 'blob') {
+            // 所有数据已经处理完毕，将数据数组返回
+            const res = formatByKey(data as IData[])
+            resolve(res)
+          } else {
+            resolve(data as LocalFile[])
+          }
         }
       }
       cursorRequest.onerror = () => {
@@ -147,7 +167,22 @@ const useFileIndexDB = () => {
         res[index].list.push(item)
       }
     })
-    return res
+
+    // 过滤不完整的数据
+    const filterRes: FormatData[] = []
+
+    res.forEach((item) => {
+      if (item.list.length != item.list[0].allSize) {
+        // 数据不完整 直接删除
+        for (let i = 0; i < item.list.length; i++) {
+          deleteDB(item.list[i].myKey)
+        }
+      } else {
+        filterRes.push(item)
+      }
+    })
+
+    return filterRes
   }
 
   return {
@@ -156,8 +191,9 @@ const useFileIndexDB = () => {
     addData,
     updateDB,
     getAllData,
-    deleteDB
+    deleteDB,
+    storeName
   }
 }
 
-export default useFileIndexDB
+export default useLocalUpload

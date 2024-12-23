@@ -4,18 +4,18 @@
       <el-button type="primary">选择文件</el-button>
     </el-upload>
     <el-table :data="list" border>
-      <el-table-column prop="name" label="文件名" width="180" />
-      <el-table-column prop="process" label="进度" width="180">
+      <el-table-column prop="name" label="文件名" />
+      <el-table-column prop="process" label="进度">
         <template #default="{ row }">
           <el-progress :percentage="Number((row.progress * 100).toFixed(2))" />
         </template>
       </el-table-column>
-      <el-table-column prop="size" label="大小" width="180">
+      <el-table-column prop="size" label="大小">
         <template #default="{ row }">
           <span>{{ formatFileSize(row.size) }}</span>
         </template>
       </el-table-column>
-      <el-table-column prop="" label="操作" width="180">
+      <el-table-column prop="" label="操作">
         <template #default="{ row }">
           <el-button v-if="row.actionType == 'init'" :loading="true">初始化中</el-button>
           <el-button v-if="row.actionType == 'wait'" @click="handleUp(row)">开始上传</el-button>
@@ -35,9 +35,12 @@ import type { UploadRequestOptions } from 'element-plus'
 import { ref } from 'vue'
 
 import { useChunkUpload } from '@/utils/upload'
+// import useOriginFile from '@/utils/useOriginFile'
 
 import type { ChunkUpload } from '@/utils/upload'
-import useFileIndexDB from '@/utils/useLocalUpload'
+import useFileIndexDB, { type FormatData, type LocalFile } from '@/utils/useLocalUpload'
+
+// const originFile = useOriginFile()
 
 const list = ref<ChunkUpload[]>([])
 
@@ -59,10 +62,19 @@ const handleContinue = (row: ChunkUpload) => {
 const { getAllData } = useFileIndexDB()
 
 const getLocalData = async () => {
+  const fileList = await getAllData('file')
+
+  fileList.forEach((item) => {
+    const uploadObj: ChunkUpload = useChunkUpload()
+    uploadObj.initByFile((item as LocalFile).file, (item as LocalFile).myKey)
+    list.value.push(uploadObj as any)
+  })
+
   const data = await getAllData()
+
   data.forEach((item) => {
     const uploadObj: ChunkUpload = useChunkUpload()
-    uploadObj.initByList(item)
+    uploadObj.initByList(item as FormatData)
     list.value.push(uploadObj as any)
   })
 }

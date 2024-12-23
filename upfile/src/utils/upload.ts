@@ -3,6 +3,7 @@ import pLimit from 'p-limit'
 import { computed, reactive, ref, type ComputedRef, type Ref } from 'vue'
 import { reqFn, reqMergeFile } from '@/api/file'
 import useFileIndexDB, { type FormatData } from './useLocalUpload'
+import { guid } from '.'
 
 export interface FileObj {
   data: Blob
@@ -24,7 +25,7 @@ export interface ChunkUpload {
   name: Ref<string>
   type: Ref<string>
   pauseState: ComputedRef<boolean>
-  initByFile: (file: File) => Promise<void>
+  initByFile: (file: File, saveUid?: string) => Promise<void>
   initByList: (formatData: FormatData) => Promise<void>
   actionType: Ref<ActionType>
 }
@@ -35,6 +36,7 @@ export const useChunkUpload = (): ChunkUpload => {
   const loading = ref(false)
   const actionType = ref<ActionType>('init')
   const md5Str = ref('')
+
   // limit是线程池组件
   const limit = pLimit(5)
   const allList = ref<FileObj[]>([])
@@ -87,7 +89,9 @@ export const useChunkUpload = (): ChunkUpload => {
             status: 'success',
             name: name.value,
             size: size.value,
-            type: type.value
+            type: type.value,
+            allSize: allList.value.length,
+            saveType: 'blob'
           })
           resolve('')
         })
@@ -102,7 +106,9 @@ export const useChunkUpload = (): ChunkUpload => {
             status: 'error',
             name: name.value,
             size: size.value,
-            type: type.value
+            type: type.value,
+            allSize: allList.value.length,
+            saveType: 'blob'
           })
           reject()
         })
@@ -249,45 +255,64 @@ export const useChunkUpload = (): ChunkUpload => {
     actionType.value = 'wait'
     startFn()
   }
-  const initByFile = async (file: File) => {
-    loading.value = true
-    actionType.value = 'init'
-    size.value = file.size
-    name.value = file.name
-    type.value = file.type
+  const initByFile = async (file: File, saveUid?: string) => {
+    try {
+      loading.value = true
+      actionType.value = 'init'
+      size.value = file.size
+      name.value = file.name
+      type.value = file.type
+      const uid = saveUid || guid()
 
-    const chunkList = chunkFile(file, 10 * 1024 * 1024)
-    md5Str.value = await hash(chunkList)
-
-    const pList = []
-    for (let i = 0; i < chunkList.length; i++) {
-      pList.push(
-        addData({
-          myKey: md5Str.value + '-' + i,
-          // file: file,
-          md5: md5Str.value,
-          blob: chunkList[i],
-          index: i,
-          status: 'init',
-          name: name.value,
-          size: size.value,
-          type: type.value
+      // 有id说明存过 不需要再存一次
+      if (!saveUid) {
+        // 本地存储文件
+        await addData({
+          myKey: uid,
+          file: file,
+          saveType: 'file'
         })
-      )
-    }
-
-    await Promise.all(pList)
-
-    allList.value = chunkList.map((item, index) => {
-      return {
-        data: item,
-        status: 'init',
-        index
       }
-    })
-    loading.value = false
-    actionType.value = 'wait'
-    startFn()
+      const chunkList = chunkFile(file, 10 * 1024 * 1024)
+      md5Str.value = await hash(chunkList)
+
+      const pList = []
+      for (let i = 0; i < chunkList.length; i++) {
+        pList.push(
+          addData({
+            myKey: md5Str.value + '-' + i,
+            // file: file,
+            md5: md5Str.value,
+            blob: chunkList[i],
+            index: i,
+            status: 'init',
+            name: name.value,
+            size: size.value,
+            type: type.value,
+            allSize: allList.value.length,
+            saveType: 'blob'
+          })
+        )
+      }
+
+      await Promise.all(pList)
+
+      // 分割文件存储完成 删除 本地源文件
+      await deleteDB(uid)
+
+      allList.value = chunkList.map((item, index) => {
+        return {
+          data: item,
+          status: 'init',
+          index
+        }
+      })
+      loading.value = false
+      actionType.value = 'wait'
+      startFn()
+    } catch (error) {
+      console.log(error)
+    }
   }
 
   const progress = computed(() => {
