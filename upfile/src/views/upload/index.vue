@@ -15,6 +15,11 @@
           <span>{{ formatFileSize(row.size) }}</span>
         </template>
       </el-table-column>
+      <el-table-column prop="netSpeed" label="速度">
+        <template #default="{ row }">
+          <span>{{ formatSpeed(row.netSpeed) }}</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="" label="操作">
         <template #default="{ row }">
           <el-button v-if="row.actionType == 'init'" :loading="true">初始化中</el-button>
@@ -33,14 +38,12 @@
 <script setup lang="ts">
 import type { UploadRequestOptions } from 'element-plus'
 import { ref } from 'vue'
+import { formatFileSize, formatSpeed } from '@/utils'
 
 import { useChunkUpload } from '@/utils/upload'
-// import useOriginFile from '@/utils/useOriginFile'
 
 import type { ChunkUpload } from '@/utils/upload'
 import useFileIndexDB, { type FormatData, type LocalFile } from '@/utils/useLocalUpload'
-
-// const originFile = useOriginFile()
 
 const list = ref<ChunkUpload[]>([])
 
@@ -77,19 +80,6 @@ const getLocalData = async () => {
     uploadObj.initByList(item as FormatData)
     list.value.push(uploadObj as any)
   })
-}
-
-function formatFileSize(size: number): string {
-  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
-  let threshold = 1024
-
-  if (size === 0) {
-    return '0 B'
-  }
-
-  let i = Math.floor(Math.log(size) / Math.log(threshold))
-
-  return Number((size / Math.pow(threshold, i)).toFixed(2)) * 1 + ' ' + units[i]
 }
 
 getLocalData()

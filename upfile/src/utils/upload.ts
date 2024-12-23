@@ -28,6 +28,7 @@ export interface ChunkUpload {
   initByFile: (file: File, saveUid?: string) => Promise<void>
   initByList: (formatData: FormatData) => Promise<void>
   actionType: Ref<ActionType>
+  netSpeed: Ref<number>
 }
 type ActionType = 'init' | 'uploading' | 'pause' | 'success' | 'wait' | 'merge'
 export const useChunkUpload = (): ChunkUpload => {
@@ -36,6 +37,9 @@ export const useChunkUpload = (): ChunkUpload => {
   const loading = ref(false)
   const actionType = ref<ActionType>('init')
   const md5Str = ref('')
+
+  // 网速
+  const netSpeed = ref(0)
 
   // limit是线程池组件
   const limit = pLimit(5)
@@ -72,14 +76,19 @@ export const useChunkUpload = (): ChunkUpload => {
 
     //每个分片的请求
     return new Promise((resolve, reject) => {
+      const start = Date.now()
       /* 这里写上传的 【接口2】，传data过去*/
       reqFn(data, {
         md5Str: md5Str.value,
         index: i
       })
         .then(() => {
-          console.log('完成了', i)
           allList.value[i].status = 'success'
+          // 单位秒
+          const diff = (Date.now() - start) / 1000;
+          // 
+          netSpeed.value = allList.value[i].data.size / diff
+
           updateDB({
             myKey: md5Str.value + '-' + i,
             // file: file,
@@ -198,6 +207,7 @@ export const useChunkUpload = (): ChunkUpload => {
     limit.clearQueue()
     loading.value = false
     isPause.value = true
+    netSpeed.value = 0;
   }
   // 继续上传
   const continueFn = () => {
@@ -223,6 +233,7 @@ export const useChunkUpload = (): ChunkUpload => {
       actionType.value = 'success'
 
       useTime.end = Date.now()
+      netSpeed.value = 0;
 
       console.log(useTime.end - useTime.start)
     }
@@ -341,6 +352,7 @@ export const useChunkUpload = (): ChunkUpload => {
     pauseState,
     initByFile,
     initByList,
-    actionType
+    actionType,
+    netSpeed
   }
 }
