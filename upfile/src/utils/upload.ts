@@ -1,43 +1,52 @@
-
 import sparkMD5 from 'spark-md5'
 import pLimit from 'p-limit'
-import { computed, ref, type ComputedRef, type Ref } from 'vue'
+import { computed, reactive, ref, type ComputedRef, type Ref } from 'vue'
 import { reqFn, reqMergeFile } from '@/api/file'
+import useFileIndexDB, { type FormatData } from './useLocalUpload'
 
-
-interface FileObj {
+export interface FileObj {
   data: Blob
-  status: 'success' | 'error' | 'init',
+  status: 'success' | 'error' | 'init'
   index: number
 }
 
 export interface ChunkUpload {
   loading: Ref<boolean>
-  uploadFn: (list: FileObj[]) => Promise<void>;
-  retryFn: () => void;
-  pauseFn: () => void;
-  stopFn: () => void;
-  continueFn: () => void;
-  mergeFile: () => void;
-  progress: ComputedRef<number>;
-  startFn: () => void;
-  size: Ref<number>;
-  name: Ref<string>;
-  type: Ref<string>;
-  pauseState: ComputedRef<boolean>;
+  uploadFn: (list: FileObj[]) => Promise<void>
+  retryFn: () => void
+  pauseFn: () => void
+  stopFn: () => void
+  continueFn: () => void
+  mergeFile: () => void
+  progress: ComputedRef<number>
+  startFn: () => void
+  size: Ref<number>
+  name: Ref<string>
+  type: Ref<string>
+  pauseState: ComputedRef<boolean>
+  initByFile: (file: File) => Promise<void>
+  initByList: (formatData: FormatData) => Promise<void>
+  actionType: Ref<ActionType>
 }
+type ActionType = 'init' | 'uploading' | 'pause' | 'success' | 'wait' | 'merge'
+export const useChunkUpload = (): ChunkUpload => {
+  const { addData, updateDB, deleteDB } = useFileIndexDB()
 
-
-export const useChunkUpload = (file: File): ChunkUpload => {
   const loading = ref(false)
+  const actionType = ref<ActionType>('init')
   const md5Str = ref('')
   // limit是线程池组件
   const limit = pLimit(5)
   const allList = ref<FileObj[]>([])
 
-  const size = ref(file.size)
-  const name = ref(file.name)
-  const type = ref(file.type)
+  const useTime = reactive({
+    start: 0,
+    end: 0
+  })
+
+  const size = ref()
+  const name = ref()
+  const type = ref()
 
   const isPause = ref(false)
 
@@ -69,16 +78,35 @@ export const useChunkUpload = (file: File): ChunkUpload => {
         .then(() => {
           console.log('完成了', i)
           allList.value[i].status = 'success'
+          updateDB({
+            myKey: md5Str.value + '-' + i,
+            // file: file,
+            blob: allList.value[i].data,
+            md5: md5Str.value,
+            index: i,
+            status: 'success',
+            name: name.value,
+            size: size.value,
+            type: type.value
+          })
           resolve('')
         })
         .catch(() => {
           allList.value[i].status = 'error'
+          updateDB({
+            myKey: md5Str.value + '-' + i,
+            // file: file,
+            blob: allList.value[i].data,
+            md5: md5Str.value,
+            index: i,
+            status: 'error',
+            name: name.value,
+            size: size.value,
+            type: type.value
+          })
           reject()
         })
     })
-
-
-
   }
   // 获取
   const hash = (chunks: Blob[]): Promise<string> => {
@@ -126,8 +154,8 @@ export const useChunkUpload = (file: File): ChunkUpload => {
   const uploadFn = async (list: FileObj[]) => {
     try {
       loading.value = true
-      isPause.value = false;
-      const promiseList: Promise<unknown>[] = [];
+      isPause.value = false
+      const promiseList: Promise<unknown>[] = []
       list.map((item) => {
         const formData = new FormData()
         formData.append('file', item.data)
@@ -136,7 +164,7 @@ export const useChunkUpload = (file: File): ChunkUpload => {
         promiseList.push(limit(() => chunkPromise(formData)))
       })
       await Promise.all(promiseList)
-      await mergeFile();
+      await mergeFile()
       loading.value = false
     } catch (error) {
       loading.value = false
@@ -144,22 +172,26 @@ export const useChunkUpload = (file: File): ChunkUpload => {
   }
   // 重试
   const retryFn = () => {
-    const needRetryList = allList.value.filter(item => item.status != 'success')
+    const needRetryList = allList.value.filter((item) => item.status != 'success')
     if (needRetryList.length) {
       uploadFn(needRetryList)
+      actionType.value = 'uploading'
+    } else {
+      mergeFile()
     }
   }
   // 暂停上传
   const pauseFn = () => {
     limit.clearQueue()
-    loading.value = false;
-    isPause.value = true;
+    loading.value = false
+    isPause.value = true
+    actionType.value = 'pause'
   }
   // 停止上传
   const stopFn = () => {
     limit.clearQueue()
-    loading.value = false;
-    isPause.value = true;
+    loading.value = false
+    isPause.value = true
   }
   // 继续上传
   const continueFn = () => {
@@ -167,21 +199,31 @@ export const useChunkUpload = (file: File): ChunkUpload => {
   }
   // 开始上传
   const startFn = () => {
+    useTime.start = Date.now()
     retryFn()
   }
   // 上传完成 合并图片
   const mergeFile = async () => {
     if (isComplete.value) {
+      actionType.value = 'merge'
       await reqMergeFile({
         md5: md5Str.value,
-        filename: file.name,
+        filename: name.value,
         count: allList.value.length
       })
+      allList.value.forEach((item) => {
+        deleteDB(md5Str.value + '-' + item.index)
+      })
+      actionType.value = 'success'
+
+      useTime.end = Date.now()
+
+      console.log(useTime.end - useTime.start)
     }
   }
   // 是否全部上传完成
   const isComplete = computed(() => {
-    const successNum = allList.value.filter(item => item.status == 'success').length
+    const successNum = allList.value.filter((item) => item.status == 'success').length
     if (successNum == allList.value.length) {
       return true
     } else {
@@ -189,10 +231,52 @@ export const useChunkUpload = (file: File): ChunkUpload => {
     }
   })
   // 初始化数据
-  const initData = async () => {
-    loading.value = true;
-    const chunkList = chunkFile(file, 10 * 1024 * 1024);
-    md5Str.value = await hash(chunkList);
+  const initByList = async (formatData: FormatData) => {
+    actionType.value = 'init'
+    md5Str.value = formatData.myKey
+
+    allList.value = formatData.list.map((item) => {
+      name.value = item.name
+      size.value = item.size
+      type.value = item.type
+
+      return {
+        data: item.blob,
+        index: item.index,
+        status: item.status
+      }
+    })
+    actionType.value = 'wait'
+    startFn()
+  }
+  const initByFile = async (file: File) => {
+    loading.value = true
+    actionType.value = 'init'
+    size.value = file.size
+    name.value = file.name
+    type.value = file.type
+
+    const chunkList = chunkFile(file, 10 * 1024 * 1024)
+    md5Str.value = await hash(chunkList)
+
+    const pList = []
+    for (let i = 0; i < chunkList.length; i++) {
+      pList.push(
+        addData({
+          myKey: md5Str.value + '-' + i,
+          // file: file,
+          md5: md5Str.value,
+          blob: chunkList[i],
+          index: i,
+          status: 'init',
+          name: name.value,
+          size: size.value,
+          type: type.value
+        })
+      )
+    }
+
+    await Promise.all(pList)
 
     allList.value = chunkList.map((item, index) => {
       return {
@@ -201,12 +285,14 @@ export const useChunkUpload = (file: File): ChunkUpload => {
         index
       }
     })
-    loading.value = false;
+    loading.value = false
+    actionType.value = 'wait'
+    startFn()
   }
 
   const progress = computed(() => {
     if (!allList.value.length) return 0
-    const successNum = allList.value.filter(item => item.status == 'success').length
+    const successNum = allList.value.filter((item) => item.status == 'success').length
     return successNum / allList.value.length
   })
 
@@ -214,7 +300,6 @@ export const useChunkUpload = (file: File): ChunkUpload => {
     return isPause.value
   })
 
-  initData()
   return {
     loading,
     uploadFn,
@@ -228,7 +313,9 @@ export const useChunkUpload = (file: File): ChunkUpload => {
     size,
     name,
     type,
-    pauseState
+    pauseState,
+    initByFile,
+    initByList,
+    actionType
   }
 }
-

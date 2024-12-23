@@ -1,5 +1,3 @@
-
-
 <template>
   <div>
     <el-upload :http-request="customUpload" :show-file-list="false">
@@ -9,20 +7,24 @@
       <el-table-column prop="name" label="文件名" width="180" />
       <el-table-column prop="process" label="进度" width="180">
         <template #default="{ row }">
-          <el-progress :percentage="row.progress * 100" :show-text="false" />
+          <el-progress :percentage="Number((row.progress * 100).toFixed(2))" />
         </template>
       </el-table-column>
-      <el-table-column prop="size" label="大小" width="180" />
+      <el-table-column prop="size" label="大小" width="180">
+        <template #default="{ row }">
+          <span>{{ formatFileSize(row.size) }}</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="" label="操作" width="180">
         <template #default="{ row }">
-          <el-button @click="handleUp(row)" :loading="row.loading" v-if="row.progress == 0"
-            >开始上传</el-button
+          <el-button v-if="row.actionType == 'init'" :loading="true">初始化中</el-button>
+          <el-button v-if="row.actionType == 'wait'" @click="handleUp(row)">开始上传</el-button>
+          <el-button v-if="row.actionType == 'pause'" @click="handleContinue(row)"
+            >继续上传</el-button
           >
-          <template v-if="row.progress > 0 && row.progress < 1">
-            <el-button @click="row.continueFn" v-if="row.pauseState">继续</el-button>
-
-            <el-button @click="handlePause(row)" v-else>暂停</el-button>
-          </template>
+          <el-button v-if="row.actionType == 'uploading'" @click="handlePause(row)">暂停</el-button>
+          <el-button v-if="row.actionType == 'merge'" loading>合并中</el-button>
+          <el-button v-if="row.actionType == 'success'">已完成</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -35,11 +37,13 @@ import { ref } from 'vue'
 import { useChunkUpload } from '@/utils/upload'
 
 import type { ChunkUpload } from '@/utils/upload'
+import useFileIndexDB from '@/utils/useLocalUpload'
 
 const list = ref<ChunkUpload[]>([])
 
 const customUpload = async (options: UploadRequestOptions) => {
-  const uploadObj: ChunkUpload = useChunkUpload(options.file)
+  const uploadObj: ChunkUpload = useChunkUpload()
+  uploadObj.initByFile(options.file)
   list.value.push(uploadObj as any)
 }
 
@@ -48,6 +52,33 @@ const handleUp = (row: ChunkUpload) => {
 }
 const handlePause = (row: ChunkUpload) => {
   row.pauseFn()
-  console.log(row.pauseState)
 }
+const handleContinue = (row: ChunkUpload) => {
+  row.continueFn()
+}
+const { getAllData } = useFileIndexDB()
+
+const getLocalData = async () => {
+  const data = await getAllData()
+  data.forEach((item) => {
+    const uploadObj: ChunkUpload = useChunkUpload()
+    uploadObj.initByList(item)
+    list.value.push(uploadObj as any)
+  })
+}
+
+function formatFileSize(size: number): string {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+  let threshold = 1024
+
+  if (size === 0) {
+    return '0 B'
+  }
+
+  let i = Math.floor(Math.log(size) / Math.log(threshold))
+
+  return Number((size / Math.pow(threshold, i)).toFixed(2)) * 1 + ' ' + units[i]
+}
+
+getLocalData()
 </script>

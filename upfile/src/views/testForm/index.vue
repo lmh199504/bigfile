@@ -1,7 +1,7 @@
 <template>
   <BaseForm @register="register">
     <template #our="{ formModel, field }">
-      <el-input v-model="formModel[field]"/>
+      <el-input v-model="formModel[field]" />
     </template>
   </BaseForm>
   <el-button @click="getValues">获取值</el-button>
@@ -9,6 +9,7 @@
 <script setup lang="ts">
 import BaseForm from '@/components/BaseForm/index.vue'
 import { useForm } from '@/components/BaseForm/hooks/useForm'
+
 
 const [register, form] = useForm({
   baseCol: {
@@ -63,9 +64,9 @@ const [register, form] = useForm({
         return {
           placeholder: '请输入',
           onInput: (val: string) => {
-            formModel.age = val;
+            formModel.age = val
           },
-          clearable: true,
+          clearable: true
         }
       }
     },
@@ -110,11 +111,12 @@ const [register, form] = useForm({
     }
   ],
   showOpenBtn: false,
-  open: true,
+  open: true
 })
 const getValues = () => {
   const value = form.getFieldsValue()
   console.log(value)
   form.validate()
 }
+
 </script>
