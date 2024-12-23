@@ -1,11 +1,14 @@
 import request from '@/utils/request'
+import { type CancelToken } from 'axios'
 
-export const reqFn = (data: FormData, params: any) => {
+
+export const reqFn = (data: FormData, params: any, cancelToken: CancelToken) => {
   return request({
     url: '/upload',
     data,
     params,
-    method: 'post'
+    method: 'post',
+    cancelToken: cancelToken
   })
 }
 

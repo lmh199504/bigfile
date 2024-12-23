@@ -4,6 +4,7 @@ import { computed, reactive, ref, type ComputedRef, type Ref } from 'vue'
 import { reqFn, reqMergeFile } from '@/api/file'
 import useFileIndexDB, { type FormatData } from './useLocalUpload'
 import { guid } from '.'
+import axios from 'axios'
 
 export interface FileObj {
   data: Blob
@@ -33,6 +34,7 @@ export interface ChunkUpload {
 type ActionType = 'init' | 'uploading' | 'pause' | 'success' | 'wait' | 'merge'
 export const useChunkUpload = (): ChunkUpload => {
   const { addData, updateDB, deleteDB } = useFileIndexDB()
+  let source = axios.CancelToken.source()
 
   const loading = ref(false)
   const actionType = ref<ActionType>('init')
@@ -81,7 +83,7 @@ export const useChunkUpload = (): ChunkUpload => {
       reqFn(data, {
         md5Str: md5Str.value,
         index: i
-      })
+      }, source.token)
         .then(() => {
           allList.value[i].status = 'success'
           // 单位秒
@@ -187,6 +189,7 @@ export const useChunkUpload = (): ChunkUpload => {
   }
   // 重试
   const retryFn = () => {
+    source = axios.CancelToken.source()
     const needRetryList = allList.value.filter((item) => item.status != 'success')
     if (needRetryList.length) {
       uploadFn(needRetryList)
@@ -197,17 +200,22 @@ export const useChunkUpload = (): ChunkUpload => {
   }
   // 暂停上传
   const pauseFn = () => {
+    source.cancel()
     limit.clearQueue()
     loading.value = false
     isPause.value = true
     actionType.value = 'pause'
+    netSpeed.value = 0;
+
   }
   // 停止上传
   const stopFn = () => {
+    source.cancel()
     limit.clearQueue()
     loading.value = false
     isPause.value = true
     netSpeed.value = 0;
+    actionType.value = 'pause'
   }
   // 继续上传
   const continueFn = () => {
